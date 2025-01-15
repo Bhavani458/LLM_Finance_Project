@@ -12,76 +12,95 @@ from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from dotenv import load_dotenv
 
+# Load environment variables (e.g., API keys) from a .env file
 load_dotenv()
 
+# Set up the Streamlit app with a title
+st.title("News Insights QA Tool 📈")
 
-st.title("News Research Tool 📈")
-
+# Sidebar for inputting URLs
 st.sidebar.title("News Article URLs")
 
-llm = OpenAI(temperature = 0.9, max_tokens = 500)
+# Initialize the OpenAI LLM with specific parameters
+llm = OpenAI(temperature=0.9, max_tokens=500)
 
+# Collect up to three URLs from the user via the sidebar
 urls = []
 for i in range(3):
     url = st.sidebar.text_input(f"URL {i+1}")
     urls.append(url)
 
+# Button in the sidebar to trigger URL processing
 process_url_clicked = st.sidebar.button("Process URLs")
 
-# Use a placeholder for vectorstore_openai
+# Placeholder to store the vectorstore object
 vectorstore_openai = None
 
-file_path = "vectorstore_openai.pkl"
+# Placeholder for showing intermediate status updates in the app
 main_placeholder = st.empty()
+
+# If the "Process URLs" button is clicked
 if process_url_clicked:
-    #load data
-    loader = UnstructuredURLLoader(urls = urls)
+    # Load data from the provided URLs using UnstructuredURLLoader
+    loader = UnstructuredURLLoader(urls=urls)
     main_placeholder.text("Data Loading...✅")
     data = loader.load()
-    #split data
+
+    # Split the loaded data into smaller chunks with overlap for context
     text_splitter = RecursiveCharacterTextSplitter(
-        separators = ["\n\n","\n",".",","],
-        chunk_size = 1000,
-        chunk_overlap = 200
+        separators=["\n\n", "\n", ".", ","],  # Define separators for splitting
+        chunk_size=1000,  # Maximum size of each chunk
+        chunk_overlap=200  # Overlap between chunks
     )
     main_placeholder.text("Text Splitter Started...✅")
-    docs = text_splitter.split_documents(data)
-    #create embeddings and save it to FAISS index
+    docs = text_splitter.split_documents(data)  # Split the data into chunks
+
+    # Generate embeddings for the chunks and store them in a FAISS vector database
     embeddings = OpenAIEmbeddings()
     vectorstore_openai = FAISS.from_documents(docs, embeddings)
     main_placeholder.text("Embedding Vector Started Building...✅")
     time.sleep(2)
-    # Save FAISS index to local storage
+
+    # Save the FAISS index to local storage for future use
     vectorstore_openai.save_local("faiss_index")
-    #st.sidebar.write("FAISS index saved successfully.")
     time.sleep(2)
 
-# Load FAISS index when needed
-if os.path.exists("faiss_index"):
+# Function to load the FAISS index from local storage (cached for performance)
+@st.cache_resource
+def load_faiss_index():
     embeddings = OpenAIEmbeddings()
-    vectorstore_openai = FAISS.load_local("faiss_index", embeddings,allow_dangerous_deserialization=True)
+    return FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
 
-# Ensure query processing only runs if vectorstore_openai exists
+# Check if the FAISS index exists and load it if available
+if os.path.exists("faiss_index"):
+    vectorstore_openai = load_faiss_index()
+
+# Ensure that query processing is only enabled if the FAISS index is loaded
 if vectorstore_openai:
-    query = main_placeholder.text_input("Question: ")
-    if query:
+    # Text input for the user's question
+    query = main_placeholder.text_input("Enter your question:")
+    if query.strip():  # Check if the query is not empty
+        # Set up the RetrievalQAWithSourcesChain to process the query
         chain = RetrievalQAWithSourcesChain.from_llm(
-            llm=llm,
-            retriever=vectorstore_openai.as_retriever()
+            llm=llm,  # Use the initialized LLM
+            retriever=vectorstore_openai.as_retriever()  # Use the vectorstore retriever
         )
         result = chain({"question": query}, return_only_outputs=True)
-        
-        # Display the answer
+
+        # Display the generated answer
         st.header("Answer")
         st.write(result["answer"])
 
-        # Display sources, if available
+        # Display the sources for the answer, if available
         sources = result.get("sources", "")
         if sources:
             st.subheader("Sources:")
-            sources_list = sources.split("\n")  # Split the sources by newline
+            sources_list = sources.split("\n")  # Split sources into a list
             for source in sources_list:
                 st.write(source)
+    else:
+        # Warn the user if the query is empty
+        st.warning("Please enter a valid question.")
 else:
-    st.write("Please process URLs to generate embeddings before querying.")
-
+    # Inform the user to process URLs first before querying
+    st.info("Please process URLs first by entering them in the sidebar and clicking 'Process URLs'.")
