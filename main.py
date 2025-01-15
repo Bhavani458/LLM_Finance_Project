@@ -66,7 +66,6 @@ if process_url_clicked:
     time.sleep(2)
 
 # Function to load the FAISS index from local storage (cached for performance)
-@st.cache_resource
 def load_faiss_index():
     embeddings = OpenAIEmbeddings()
     return FAISS.load_local("faiss_index", embeddings, allow_dangerous_deserialization=True)
